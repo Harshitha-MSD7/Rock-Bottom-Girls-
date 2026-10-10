@@ -1,8 +1,8 @@
 # Supabase authentication integration
 
-This contribution adds reusable authentication components and database setup.
-It does not change existing navigation, package files, or API code.
-Login is not activated by adding these files alone.
+Authentication is now integrated with the team navigation.
+The app uses Supabase sessions to protect the tabs and provides logout in Settings. API code is unchanged.
+The original Expo starter home is preserved in frontend/src/components/starter-home.tsx; the team dashboard remains the Status tab.
 
 ## Dependencies
 
@@ -16,7 +16,7 @@ Commit the resulting package.json and package-lock.json changes when integrating
 Copy frontend/.env.example to frontend/.env.local and fill in the project URL
 and publishable key. Never commit .env.local or a Supabase server secret.
 
-## Navigation integration
+## Navigation integration (implemented)
 
 - Wrap the root navigator with AuthProvider from @/contexts/auth-context.
 - Use useAuth() to wait for session loading before choosing a route.
