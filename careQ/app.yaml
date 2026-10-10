@@ -1,0 +1,3 @@
+name: careQ
+icon: 🔔
+description: Flask-controlled buzzer on Arduino pin 9.
