@@ -138,6 +138,11 @@ function PatientCard({
       {device && (
         <>
           {age !== null && <Text style={styles.detail}>Last contact: {age} seconds ago</Text>}
+          {!device.freshness_verified && (
+            <Text style={styles.pending}>
+              Location freshness unverified: watch measurement counter not received.
+            </Text>
+          )}
           {device.distance_meters !== null && (
             <Text style={styles.detail}>
               {status.location_stale ? 'Last known distance' : 'Distance from home'}:{' '}
