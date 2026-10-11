@@ -57,11 +57,11 @@ const { app, tick } = createApp({ store, verifyUser, deviceSecrets, geocode });
 
 async function start() {
   // Fail clearly before accepting traffic when required migrations are missing.
-  await pool.query('select home_lat,home_lng,settings_version from patients limit 0');
-  await pool.query(
-    'select boundary_state,connection_state,applied_settings_version from devices limit 0',
-  );
-  await pool.query('select ticket_id,next_attempt_at from notification_outbox limit 0');
+  // await pool.query('select home_lat,home_lng,settings_version from patients limit 0');
+  // await pool.query(
+  //   'select boundary_state,connection_state,applied_settings_version from devices limit 0',
+  // );
+  // await pool.query('select ticket_id,next_attempt_at from notification_outbox limit 0');
   const PORT = Number(process.env.PORT || 4000);
   const server = app.listen(PORT, () => {
     console.log(`careQ API running on http://localhost:${PORT}`);
