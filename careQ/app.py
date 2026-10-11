@@ -1,8 +1,95 @@
-from flask import Flask
+import threading
 
-# Flask owns the HTTP routes; the Arduino App entry point adds Bridge-backed routes.
+from arduino.app_utils import Bridge
+from flask import Flask, jsonify, request
+
 app = Flask(__name__)
 
+# STATES
+
+watch_state = {
+    "location": {
+        "latitude": None,
+        "longitude": None,
+    },
+    "alert": False,
+    "productid": None,
+    "voice_message_path": None,
+    "wifi_connectivity": False,
+    "battery": None,
+    "heartbeat": False,
+}
+
+
+def get_watch_state():
+    return watch_state
+
+
+def update_watch_state(values):
+    location = values.get("location")
+    if isinstance(location, dict):
+        watch_state["location"].update(location)
+
+    for field_name in (
+        "alert",
+        "productid",
+        "voice_message_path",
+        "wifi_connectivity",
+        "battery",
+        "heartbeat",
+    ):
+        if field_name in values:
+            watch_state[field_name] = values[field_name]
+
+    return watch_state
+
+# HARDWARE FUNCTIONS
+
+def beep():
+    Bridge.call("beep")
+    return {"status": "beep sent"}
+
+def activate_alert(active):
+    Bridge.call("set_alert", active)
+    watch_state["alert"] = active
+    return {"status": "alert enabled" if active else "alert disabled", "alert": active}
+
+
+# ROUTES
+
+@app.get("/state")
+def state():
+    return jsonify(get_watch_state())
+
+
+@app.patch("/state")
+def update_state():
+    values = request.get_json(silent=True)
+    if not isinstance(values, dict):
+        return {"error": "request body must be a JSON object"}, 400
+    return jsonify(update_watch_state(values))
+
+@app.get("/beep")
+def beep_route():
+    return beep()
+
+
+@app.get("/alert")
+def alert():
+    active = request.args.get("active")
+    if active not in ("true", "false"):
+        return {"error": "active must be true or false"}, 400
+
+    return activate_alert(active == "true")
+
+# START THE SERVER
+def start_server():
+    threading.Thread(
+        target=lambda: app.run(
+            host="0.0.0.0", port=5000, debug=False, use_reloader=False
+        ),
+        daemon=True,
+    ).start()
 
 @app.get("/")
 def index():
@@ -15,7 +102,5 @@ def health():
     # Lightweight health check that does not touch the hardware.
     return {"status": "ok"}
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
-    
+    start_server()

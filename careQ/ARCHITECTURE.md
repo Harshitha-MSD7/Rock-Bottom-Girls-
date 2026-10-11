@@ -74,4 +74,8 @@ Use `arduino-app-cli monitor` to view MCU startup and callback messages.
 
 ## Hardware
 
-The active buzzer uses digital pin 9 and a shared ground with the UNO Q. Disconnect board power before changing wiring. The buzzer should be connected with its positive input to pin 9 and its negative input to GND.
+The active buzzer uses digital pin 9 and a shared ground with the UNO Q. Disconnect board power before changing wiring. The buzzer should be connected with its positive input to pin 9 and its negative input to GND.Backend/device request
+    -> Flask /alert?active=true|false
+    -> Bridge.call("set_alert", active)
+    -> MCU stores alert state
+    -> MCU loop plays the alert pattern until disabled
