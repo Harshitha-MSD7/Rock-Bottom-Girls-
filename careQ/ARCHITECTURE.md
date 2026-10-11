@@ -12,6 +12,12 @@ careQ is an Arduino UNO Q application with two cooperating sides:
 
 Describes the Arduino App to the App CLI, including its name, icon, and purpose.
 
+### `.env`
+
+Stores the configured `PRODUCT_ID` used to identify this careQ device during
+the backend connection handshake. It is loaded by `app.py` when the process
+starts.
+
 ### `sketch/sketch.ino`
 
 Runs on the MCU. It configures pin 9 as an output, registers the `beep` and
@@ -35,6 +41,10 @@ Defines the shared Flask application, in-memory watch state, state routes, and
 hardware routes. It is also responsible for forwarding buzzer commands through
 Router Bridge. It does not start the Arduino App runtime; `main.py` calls
 `start_server()` during app startup.
+
+The `PRODUCT_ID` value is loaded from the careQ `.env` file when `app.py` is
+imported. `python-dotenv` is listed in the application requirements so the same
+loading behavior works in the Arduino App runtime and standalone Python.
 
 ### `testing.py`
 
@@ -73,12 +83,38 @@ port 5000.
 | --- | --- | --- |
 | `GET` | `/` | Returns `{"message": "careQ server is running"}`. |
 | `GET` | `/health` | Returns `{"status": "ok"}` without accessing hardware. |
+| `GET` | `/setup` | Backend connection handshake. Takes no parameters, marks the watch as set up, and returns HTTP 200 with the configured `product_id` and current states. |
 | `GET` | `/state` | Returns the current in-memory watch state. |
 | `PATCH` | `/state` | Merges a JSON object into the watch state. `location` is merged as a nested object; the known top-level fields are `alert`, `productid`, `voice_message_path`, `wifi_connectivity`, `battery`, and `heartbeat`. Returns HTTP 400 when the body is not a JSON object. |
 | `GET` | `/beep` | Calls MCU Bridge method `beep`, which drives pin 9 HIGH for 300 ms, then LOW. |
 | `GET` | `/alert?active=true\|false` | Calls MCU Bridge method `set_alert` and updates the in-memory `alert` state. Returns HTTP 400 when `active` is missing or is not exactly `true` or `false`. |
 
 The `/state` data is in memory only and is reset when the Python app restarts.
+The `/setup` response has this shape (with the remaining state fields included
+under `states`):
+
+```json
+{
+    "product_id": "00000001",
+    "states": {
+        "setup": true,
+        "alert": false,
+        "productid": null,
+        "voice_message_path": null,
+        "wifi_connectivity": false,
+        "battery": null,
+        "heartbeat": false,
+        "location": {
+            "latitude": null,
+            "longitude": null
+        }
+    },
+    "message": "careQ server is running"
+}
+```
+
+The `states` object also contains the location, alert, voice-message,
+connectivity, battery, and heartbeat fields described above.
 
 ## Request Flow
 
@@ -105,6 +141,14 @@ The `/state` data is in memory only and is reset when the Python app restarts.
 1. A client requests `GET /state` to read the current watch state.
 2. A client sends `PATCH /state` with a JSON object to update the in-memory
     state. This route does not call the MCU or Router Bridge.
+
+### Setup
+
+1. The backend requests `GET /setup` while establishing a connection. The
+    route takes no parameters.
+2. Flask marks `watch_state["setup"]` as `true`.
+3. Flask returns `PRODUCT_ID` from `.env` as `product_id`, together with the
+    current watch state under `states` and the server status message.
 
 ## Running the App
 
