@@ -9,7 +9,7 @@ function createApp({
   store,
   verifyUser,
   deviceSecrets,
-  notify = async () => {},
+  notify = async () => { },
   geocode = async () => null,
 }) {
   const app = express();
