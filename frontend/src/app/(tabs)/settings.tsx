@@ -1,19 +1,16 @@
 import { useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
+import { disablePush, enablePush, notificationUnavailableReason } from '@/services/notifications';
+import { stopLegacyLocationTracking } from '@/services/location';
 
 export default function SettingsScreen() {
   const { session } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const pending = useRef(false);
 
   async function handleSignOut() {
@@ -24,6 +21,8 @@ export default function SettingsScreen() {
     setError('');
 
     try {
+      if (session) await disablePush(session.access_token, session.user.id);
+      await stopLegacyLocationTracking();
       const { error: signOutError } = await supabase.auth.signOut({
         scope: 'local',
       });
@@ -31,8 +30,27 @@ export default function SettingsScreen() {
       if (signOutError) {
         setError('Unable to sign out. Please try again.');
       }
-    } catch {
-      setError('Check your connection and try again.');
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Check your connection and try again.');
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function changeNotifications(enable: boolean) {
+    if (!session || pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await (enable ? enablePush : disablePush)(session.access_token, session.user.id);
+      setNotice(
+        enable ? 'Push alerts enabled on this phone.' : 'Push alerts disabled on this phone.',
+      );
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Notification setup failed.');
     } finally {
       pending.current = false;
       setBusy(false);
@@ -42,14 +60,36 @@ export default function SettingsScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Radius & Location Settings</Text>
-      <Text style={styles.note}>
-        Radius and location controls are not connected yet.
-      </Text>
+      <Text style={styles.note}>Set each patient&apos;s allowed radius on the Status tab.</Text>
 
       <Text style={styles.label}>Signed in as</Text>
       <Text selectable style={styles.email}>
         {session?.user.email}
       </Text>
+      <Text style={styles.label}>Watch notifications</Text>
+      <Text style={styles.note}>
+        {notificationUnavailableReason() ??
+          'Receive boundary and connection alerts when the app is closed.'}
+      </Text>
+      {!!notice && (
+        <Text accessibilityLiveRegion="polite" style={styles.note}>
+          {notice}
+        </Text>
+      )}
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || !!notificationUnavailableReason()}
+        onPress={() => void changeNotifications(true)}
+        style={[styles.button, (busy || !!notificationUnavailableReason()) && styles.dimmed]}>
+        <Text style={styles.buttonText}>Enable push alerts</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy}
+        onPress={() => void changeNotifications(false)}
+        style={[styles.button, busy && styles.dimmed]}>
+        <Text style={styles.buttonText}>Disable push alerts</Text>
+      </Pressable>
 
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -63,10 +103,7 @@ export default function SettingsScreen() {
         accessibilityState={{ disabled: busy }}
         disabled={busy}
         onPress={() => void handleSignOut()}
-        style={({ pressed }) => [
-          styles.button,
-          (pressed || busy) && styles.dimmed,
-        ]}>
+        style={({ pressed }) => [styles.button, (pressed || busy) && styles.dimmed]}>
         {busy ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
