@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
 import { AuthButton, AuthShell, s } from '@/components/auth-ui';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
@@ -43,6 +44,8 @@ export default function SignInScreen() {
       {!!(error || sessionError) && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={s.error}>{error || sessionError}</Text>}
       <AuthButton label={busy ? 'Signing in…' : 'Sign in  →'} busy={busy} onPress={() => void signIn()} />
     </View>
-    <Text style={s.note}>Need an account or help signing in? Contact your careQ project administrator.</Text>
+    <Pressable accessibilityRole="button" onPress={() => router.push('/(auth)/register')}>
+      <Text style={s.note}>Don't have an account? <Text style={s.link}>Create caregiver account →</Text></Text>
+    </Pressable>
   </AuthShell>;
 }

@@ -4,8 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
-const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const key = process.env.EXPO_PUBLIC_SUPABASE_KEY;
+
+const url = rawUrl ? rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '') : '';
 
 if (!url || !key) {
   throw new Error(
