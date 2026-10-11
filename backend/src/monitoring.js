@@ -28,10 +28,44 @@ const hasHome = (patient) => patient.home_lat != null && patient.home_lng != nul
 function validateUpdate(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail('Expected a JSON object');
   for (const key of Object.keys(body))
-    if (!['lat', 'lng', 'battery_percent', 'applied_settings_version'].includes(key))
+    if (
+      ![
+        'lat',
+        'lng',
+        'battery_percent',
+        'applied_settings_version',
+        'boot_id',
+        'measurement_seq',
+        'installed_audio_version',
+        'installed_audio_sha256',
+      ].includes(key)
+    )
       fail(`Unexpected field: ${key}`);
-  number(body.lat, 'lat', -90, 90);
-  number(body.lng, 'lng', -180, 180);
+  if (body.lat !== undefined || body.lng !== undefined) {
+    number(body.lat, 'lat', -90, 90);
+    number(body.lng, 'lng', -180, 180);
+  }
+  if (body.boot_id !== undefined || body.measurement_seq !== undefined) {
+    if (
+      typeof body.boot_id !== 'string' ||
+      !/^[A-Za-z0-9_-]{8,80}$/.test(body.boot_id) ||
+      !Number.isSafeInteger(body.measurement_seq) ||
+      body.measurement_seq < 0 ||
+      body.lat === undefined
+    )
+      fail('Supply boot_id and a non-negative measurement_seq with coordinates');
+  }
+  if (
+    body.installed_audio_version !== undefined &&
+    body.installed_audio_version !== null &&
+    !/^[a-f0-9-]{36}$/i.test(body.installed_audio_version)
+  )
+    fail('Invalid audio version');
+  if (
+    body.installed_audio_sha256 !== undefined &&
+    !/^[a-f0-9]{64}$/i.test(body.installed_audio_sha256)
+  )
+    fail('Invalid audio checksum');
   if (body.battery_percent !== undefined) number(body.battery_percent, 'battery_percent', 0, 100);
   if (
     body.applied_settings_version !== undefined &&
@@ -50,6 +84,16 @@ function config(patient) {
     pause_until: patient.desired_pause_until,
     audio_silenced: patient.desired_audio_silenced,
     send_interval_seconds: SEND_INTERVAL_SECONDS,
+    audio: patient.audio_version
+      ? {
+          version: patient.audio_version,
+          sha256: patient.audio_sha256,
+          download_path: `/api/watch/audio/${patient.audio_version}`,
+          format: 'pcm_s16le',
+          sample_rate: 16000,
+          channels: 1,
+        }
+      : null,
   };
 }
 
@@ -59,12 +103,31 @@ function transition(patientInput, deviceInput, update, now) {
     device = { ...deviceInput },
     events = [];
   const before = { ...device };
+  let newMeasurement = false;
   if (update) {
     validateUpdate(update);
     device.last_seen_at = new Date(now).toISOString();
-    device.last_position_at = device.last_seen_at;
-    device.last_lat = update.lat;
-    device.last_lng = update.lng;
+    newMeasurement =
+      update.lat !== undefined &&
+      (update.boot_id !== undefined
+        ? update.boot_id !== device.measurement_boot ||
+          update.measurement_seq > Number(device.measurement_seq ?? -1)
+        : !device.freshness_verified);
+    if (newMeasurement) {
+      device.last_position_at = device.last_seen_at;
+      device.last_lat = update.lat;
+      device.last_lng = update.lng;
+      device.freshness_verified = update.boot_id !== undefined;
+      device.measurement_boot = update.boot_id ?? null;
+      device.measurement_seq = update.measurement_seq ?? null;
+    }
+    if (update.installed_audio_version === null) device.installed_audio_version = null;
+    else if (
+      patient.audio_version &&
+      update.installed_audio_version === patient.audio_version &&
+      update.installed_audio_sha256 === patient.audio_sha256
+    )
+      device.installed_audio_version = patient.audio_version;
     if (update.battery_percent !== undefined) device.battery_percent = update.battery_percent;
     // Only acknowledge the exact currently requested settings. Old replies cannot
     // make a newer request appear applied.
@@ -93,8 +156,16 @@ function transition(patientInput, deviceInput, update, now) {
       Number(device.last_lat),
       Number(device.last_lng),
     );
-    device.boundary_state =
-      device.distance_meters > Number(patient.radius_meters) ? 'outside' : 'inside';
+    const measured = device.distance_meters > Number(patient.radius_meters) ? 'outside' : 'inside';
+    if (newMeasurement) {
+      const consecutive = before.last_position_at && now - time(before.last_position_at) <= 25000;
+      device.candidate_count =
+        consecutive && device.candidate_boundary === measured
+          ? Math.min(2, Number(device.candidate_count || 0) + 1)
+          : 1;
+      device.candidate_boundary = measured;
+      if (device.candidate_count >= 2) device.boundary_state = measured;
+    }
     if (
       device.boundary_state === 'inside' &&
       (patient.desired_audio_silenced || device.audio_silenced)
@@ -104,14 +175,14 @@ function transition(patientInput, deviceInput, update, now) {
       device.audio_silenced = false;
     }
   }
-  const paused = time(device.paused_until) > now;
+  const paused = time(patient.desired_pause_until) > now;
   // When a pause expires without fresh location, wait for a fresh reading before
   // starting a new boundary alert. Preserve an existing active outside alert.
   device.alarm_active = fresh
     ? device.boundary_state === 'outside' && !paused
     : before.alarm_active && !paused;
   if (!before.alarm_active && device.alarm_active) events.push('out_of_bounds');
-  if (before.boundary_state === 'outside' && device.boundary_state === 'inside')
+  if (!paused && before.boundary_state === 'outside' && device.boundary_state === 'inside')
     events.push('returned_inside');
   if (before.connection_state !== 'lost' && device.connection_state === 'lost')
     events.push('connection_lost');

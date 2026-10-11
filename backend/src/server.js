@@ -5,6 +5,8 @@ const { Pool } = require('pg');
 
 const { Store } = require('./store');
 const { createApp } = require('./app');
+const { createAudioService, supabaseAudioStorage } = require('./audio');
+const { createWatchLink } = require('./watch-link');
 const { CHECK_INTERVAL_MS } = require('./monitoring');
 
 const REQUIRED = [
@@ -17,7 +19,7 @@ for (const name of REQUIRED) {
   if (!process.env[name]) throw new Error(`Missing ${name}; see backend/.env.example`);
 }
 
-// Device UUID -> secret. A watch must send both to be accepted.
+// Watch product ID -> secret. A watch must send both to be accepted.
 const deviceSecrets = JSON.parse(process.env.DEVICE_SECRETS_JSON);
 const secretsValid =
   deviceSecrets &&
@@ -53,15 +55,29 @@ const geocode = createGeocoder({
   userAgent: process.env.GEOCODING_USER_AGENT,
 });
 const deliver = createPushWorker(pool, { accessToken: process.env.EXPO_ACCESS_TOKEN });
-const { app, tick } = createApp({ store, verifyUser, deviceSecrets, geocode });
+const audioService = process.env.SUPABASE_SECRET_KEY
+  ? createAudioService({
+      store,
+      storage: supabaseAudioStorage(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY),
+    })
+  : undefined;
+const { app, tick } = createApp({
+  store,
+  verifyUser,
+  deviceSecrets,
+  geocode,
+  audioService,
+  pairingCodes: JSON.parse(process.env.DEVICE_PAIRING_CODES_JSON || '{}'),
+  watchLink: createWatchLink(),
+  requireWatchSecret: process.env.WATCH_SECRET_REQUIRED !== 'false',
+});
 
 async function start() {
-  // Fail clearly before accepting traffic when required migrations are missing.
-  // await pool.query('select home_lat,home_lng,settings_version from patients limit 0');
-  // await pool.query(
-  //   'select boundary_state,connection_state,applied_settings_version from devices limit 0',
-  // );
-  // await pool.query('select ticket_id,next_attempt_at from notification_outbox limit 0');
+  await pool.query(
+    'select product_id,paired,measurement_seq,installed_audio_version from devices limit 0',
+  );
+  await pool.query('select audio_version,phone_number from patients limit 0');
+  await pool.query('select ticket_id from notification_outbox limit 0');
   const PORT = Number(process.env.PORT || 4000);
   const server = app.listen(PORT, () => {
     console.log(`careQ API running on http://localhost:${PORT}`);
@@ -106,7 +122,7 @@ async function start() {
 start().catch(async (error) => {
   // 42P01 = missing table, 42703 = missing column: a migration has not been run.
   const reason = ['42P01', '42703'].includes(error.code)
-    ? `the database is missing a migration (${error.message}). Run the files in supabase/migrations in order; see MONITORING-SETUP.md.`
+    ? `the database is missing a migration (${error.message}). Apply only missing migrations; see MONITORING-SETUP.md.`
     : `${error.code || error.name}: ${error.message}. Check DATABASE_URL and DATABASE_CA_FILE in .env.`;
   console.error('Startup failed:', reason);
   await pool.end();
