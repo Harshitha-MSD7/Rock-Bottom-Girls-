@@ -1,11 +1,14 @@
 // Calls to the careQ Express backend. Every request carries the caregiver's
 // Supabase access token; the backend checks it and the patient assignment.
-const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
+export const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
 
 export type PatientStatus = {
   patient: {
     id: string;
     display_name?: string;
+    phone_number?: string | null;
+    emergency_contact?: string | null;
+    audio_version?: string | null;
     radius_meters?: number | string;
     // null until the caregiver sets a home location.
     home_lat?: number | string | null;
@@ -16,6 +19,12 @@ export type PatientStatus = {
   };
   // null when no watch is assigned to the patient yet.
   device: {
+    product_id?: string | null;
+    paired?: boolean;
+    last_lat?: number | string | null;
+    last_lng?: number | string | null;
+    freshness_verified?: boolean;
+    installed_audio_version?: string | null;
     connection_state: 'unknown' | 'connected' | 'lost';
     boundary_state: 'unknown' | 'inside' | 'outside';
     distance_meters: number | null;
