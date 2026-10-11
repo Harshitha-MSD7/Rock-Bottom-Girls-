@@ -1,1 +1,9 @@
 node_modules/
+.env
+.env.*
+!.env.example
+.expo/
+__pycache__/
+*.py[cod]
+watch/position.json
+*.tsbuildinfo
